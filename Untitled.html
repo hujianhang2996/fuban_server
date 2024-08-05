@@ -1,0 +1,95 @@
+<tr>
+    <td><a class='view'></a><a class='info'><i id='dev-parity' class='fa fa-circle orb green-orb' style='cursor:pointer'
+                onclick="toggle_state('Device','parity','down')"></i><span>正常运行，设备处于活动状态<br>点击以休眠设备</span></a><a
+            href="/Main/Settings/Device?name=parity">奇偶校验</a></td>
+    <td><a class='info hand' onclick="openTerminal('disklog','sdd','')"><i
+                class='icon-disk icon'></i><span>磁盘日志信息</span></a><span
+            style='font-family:bitstream'>WDC_WD40EZRZ-00GXCB0_PL1331LAH3832H</span> - 4 TB (sdd)</td>
+    <td>39 C</td>
+    <td><span class='diskio'>0.0 B/s</span><span class='number'>69,426</span></td>
+    <td><span class='diskio'>69.6 KB/s</span><span class='number'>78,482</span></td>
+    <td>0</td>
+    <td colspan='5'></td>
+</tr>
+<tr>
+    <td><a class='view' href="/Main/Browse?dir=/mnt/disk1"><i class="icon-u-tab" title="浏览 /mnt/disk1"></i></a><a
+            class='info'><i id='dev-disk1' class='fa fa-circle orb green-orb' style='cursor:pointer'
+                onclick="toggle_state('Device','disk1','down')"></i><span>正常运行，设备处于活动状态<br>点击以休眠设备</span></a><a
+            href="/Main/Settings/Device?name=disk1">磁盘 1</a></td>
+    <td><a class='info hand' onclick="openTerminal('disklog','sdb','')"><i
+                class='icon-disk icon'></i><span>磁盘日志信息</span></a><span
+            style='font-family:bitstream'>WDC_WD40EZRZ-00GXCB0_PL2331LAH0NP5J</span> - 4 TB (sdb)</td>
+    <td>38 C</td>
+    <td><span class='diskio'>0.0 B/s</span><span class='number'>407,776</span></td>
+    <td><span class='diskio'>69.6 KB/s</span><span class='number'>77,393</span></td>
+    <td>0</td>
+    <td>xfs</td>
+    <td>4 TB</td>
+    <td>
+        <div class='usage-disk'><span style='width:42%' class=''></span><span>1.67 TB</span></div>
+    </td>
+    <td>
+        <div class='usage-disk'><span style='width:58%' class=''></span><span>2.33 TB</span></div>
+    </td>
+</tr>
+<tr>
+    <td><a class='view' href="/Main/Browse?dir=/mnt/disk2"><i class="icon-u-tab" title="浏览 /mnt/disk2"></i></a><a
+            class='info'><i id='dev-disk2' class='fa fa-circle orb green-orb' style='cursor:pointer'
+                onclick="toggle_state('Device','disk2','down')"></i><span>正常运行，设备处于活动状态<br>点击以休眠设备</span></a><a
+            href="/Main/Settings/Device?name=disk2">磁盘 2</a></td>
+    <td><a class='info hand' onclick="openTerminal('disklog','sdc','')"><i
+                class='icon-disk icon'></i><span>磁盘日志信息</span></a><span
+            style='font-family:bitstream'>ST4000VX007_ZA4M1D1O</span> - 4 TB (sdc)</td>
+    <td>40 C</td>
+    <td><span class='diskio'>0.0 B/s</span><span class='number'>565</span></td>
+    <td><span class='diskio'>0.0 B/s</span><span class='number'>551</span></td>
+    <td>0</td>
+    <td>xfs</td>
+    <td>4 TB</td>
+    <td>
+        <div class='usage-disk'><span style='width:1%' class=''></span><span>27.9 GB</span></div>
+    </td>
+    <td>
+        <div class='usage-disk'><span style='width:99%' class=''></span><span>3.97 TB</span></div>
+    </td>
+</tr>
+<tr>
+    <td><a class='view' href="/Main/Browse?dir=/mnt/disk3"><i class="icon-u-tab" title="浏览 /mnt/disk3"></i></a><a
+            class='info'><i id='dev-disk3' class='fa fa-circle orb green-orb' style='cursor:pointer'
+                onclick="toggle_state('Device','disk3','down')"></i><span>正常运行，设备处于活动状态<br>点击以休眠设备</span></a><a
+            href="/Main/Settings/Device?name=disk3">磁盘 3</a></td>
+    <td><a class='info hand' onclick="openTerminal('disklog','sde','')"><i
+                class='icon-disk icon'></i><span>磁盘日志信息</span></a><span
+            style='font-family:bitstream'>ST1000VM002-1ET162_S5131DBZ</span> - 1 TB (sde)</td>
+    <td>35 C</td>
+    <td><span class='diskio'>0.0 B/s</span><span class='number'>1186</span></td>
+    <td><span class='diskio'>0.0 B/s</span><span class='number'>538</span></td>
+    <td>0</td>
+    <td>xfs</td>
+    <td>1 TB</td>
+    <td>
+        <div class='usage-disk'><span style='width:23%' class=''></span><span>235 GB</span></div>
+    </td>
+    <td>
+        <div class='usage-disk'><span style='width:77%' class=''></span><span>765 GB</span></div>
+    </td>
+</tr>
+<tr class='tr_last'>
+    <td><a class='info'><i class='fa fa-fw fa-toggle-down control'
+                onclick="toggle_state('Device','array*','down')"></i><span>休眠 阵列</span></a><a class='info'><i
+                class='fa fa-fw fa-toggle-up control' onclick="toggle_state('Device','array*','up')"></i><span>唤醒
+                阵列</span></a></td>
+    <td><a class='static'><i class='icon-disks icon'></i></a><span></span>4 设备的磁盘阵列</td>
+    <td>38 C</td>
+    <td><span class='diskio'>0.0 B/s</span><span class='number'>478,953</span></td>
+    <td><span class='diskio'>139.3 KB/s</span><span class='number'>156,964</span></td>
+    <td>0</td>
+    <td></td>
+    <td>9 TB</td>
+    <td>
+        <div class='usage-disk'><span style='width:22%' class=''></span><span>1.94 TB</span></div>
+    </td>
+    <td>
+        <div class='usage-disk'><span style='width:78%' class=''></span><span>7.06 TB</span></div>
+    </td>
+</tr>
