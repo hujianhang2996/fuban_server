@@ -1,8 +1,8 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
-	"html/template"
 	"log"
 	"math"
 	"math/rand"
@@ -11,29 +11,22 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/shirou/gopsutil/v4/cpu"
-	"github.com/shirou/gopsutil/v4/disk"
+	"github.com/shirou/gopsutil/v4/host"
+	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/shirou/gopsutil/v4/net"
 )
 
 // IOCounters(pernic bool)
 var addr = flag.String("addr", "0.0.0.0:8080", "http service address")
 
-type FanInfo struct {
-	Name  string
-	Speed int64
+type SystemInfo struct {
+	CpuInfos []cpu.InfoStat
+	HostInfo host.InfoStat
 }
 
 type NetInfo struct {
 	UpSpeed   int64
 	DownSpeed int64
-}
-type DiskInfo struct {
-	Name       string
-	Temp       int64
-	TotalSize  int64
-	UsedSize   int64
-	ReadCount  int64
-	WriteCount int64
 }
 
 type ContainerInfo struct {
@@ -50,17 +43,18 @@ type Catch1s struct {
 	Type         uint
 	CpuLoad      int64
 	CpuCoreLoads []int64
-	MemLoad      int64
+	MemTotal     int64
+	MemUsed      int64
 	NetInfos     map[string]NetInfo
+	Uptime       int64
 }
 
 type Catch5s struct {
 	Type       uint
-	CpuTemp    int64
-	MbTemp     int64
-	Fans       []FanInfo
+	Sensors    []SensorInfo
 	Disks      []DiskInfo
 	Containers []ContainerInfo
+	Temps      map[string]TemperatureStat
 }
 
 var upgrader = websocket.Upgrader{
@@ -81,7 +75,6 @@ func catch_1s(oldNetInfos *map[string]NetInfo) Catch1s {
 	ioCounters, _ := net.IOCounters(true)
 	netInfos := make(map[string]NetInfo)
 	for _, i := range ioCounters {
-
 		v, ok := (*oldNetInfos)[i.Name]
 		if ok {
 			netInfos[i.Name] = NetInfo{int64(i.BytesSent) - v.UpSpeed, int64(i.BytesRecv) - v.DownSpeed}
@@ -90,21 +83,26 @@ func catch_1s(oldNetInfos *map[string]NetInfo) Catch1s {
 		}
 		(*oldNetInfos)[i.Name] = NetInfo{int64(i.BytesSent), int64(i.BytesRecv)}
 	}
+
+	memStat, _ := mem.VirtualMemory()
+	uptime, _ := host.Uptime()
 	return Catch1s{1, int64(math.Round(t / float64(n))), percentInt,
-		18 + int64(rand.Intn(6)), netInfos}
+		int64(memStat.Total), int64(memStat.Total - memStat.Available), netInfos, int64(uptime)}
 }
 func catch_5s() Catch5s {
-	diskInfos := []DiskInfo{}
-	partitions, _ := disk.Partitions(false)
-	counterStat, _ := disk.IOCounters("")
-	for _, partition := range partitions {
-		usageStat, _ := disk.Usage(partition.Mountpoint)
-		diskInfos = append(diskInfos, DiskInfo{partition.Device, -1, int64(usageStat.Total), int64(usageStat.Used),
-			int64(counterStat[partition.Device].ReadCount), int64(counterStat[partition.Device].WriteCount)})
-	}
-
-	return Catch5s{5, 35 + int64(rand.Intn(5)), 32 + int64(rand.Intn(5)),
-		[]FanInfo{FanInfo{"fan1", 1500 + int64(rand.Intn(300))}, FanInfo{"fan2", 1400 + int64(rand.Intn(300))}},
+	// diskInfos := []DiskInfo{}
+	// partitions, _ := disk.Partitions(false)
+	// counterStat, _ := disk.IOCounters("")
+	// for _, partition := range partitions {
+	// 	usageStat, _ := disk.Usage(partition.Mountpoint)
+	// 	diskInfos = append(diskInfos, DiskInfo{partition.Device, -1, int64(usageStat.Total), int64(usageStat.Used),
+	// 		int64(counterStat[partition.Device].ReadCount), int64(counterStat[partition.Device].WriteCount)})
+	// }
+	diskInfos, _ := GetDiskInfos([]string{}, []string{}, []string{"tmpfs", "devtmpfs", "devfs", "iso9660", "overlay", "aufs", "squashfs"})
+	temps, _ := GetTemps()
+	sensorInfos, _ := GetSensorInfos()
+	return Catch5s{5,
+		sensorInfos,
 		// []DiskInfo{
 		// 	DiskInfo{"WDC_WD40EZRZ-00GXCB0_PL1331LAH3832H", 38 + int64(rand.Intn(5)), 3905110812000, 1634428668000},
 		// 	DiskInfo{"WDC_WD40EZRZ-00GXCB0_PL2331LAH0NP5J", 38 + int64(rand.Intn(5)), 3905110812000, 1134428668000},
@@ -118,7 +116,7 @@ func catch_5s() Catch5s {
 			ContainerInfo{"GoStatic", 0, false, "8043:8043", "/olympos:/mnt", 0.1 + rand.Float64()*0.02, 3 + rand.Float64()},
 			ContainerInfo{"aria2-pro", 1, false, "6800:6800,6888:6888", "/downloads:/mnt/user/downloads", 0.1 + rand.Float64()*0.02, 3 + rand.Float64()},
 			ContainerInfo{"prowlarr", 1, false, "9696:9696", "/config:/mnt/user/appdata/prowlarr", 0.1 + rand.Float64()*0.02, 3 + rand.Float64()},
-		}}
+		}, temps}
 }
 
 func start(w http.ResponseWriter, r *http.Request) {
@@ -144,14 +142,13 @@ func start(w http.ResponseWriter, r *http.Request) {
 	count_5s := 0
 	oldNetInfos := make(map[string]NetInfo)
 	for t := range ticker.C {
-		log.Printf("%s|%v\n", r.RemoteAddr, t.UTC().Local().Format("2006-01-02-15:04:05"))
-		// err = c.WriteMessage(1, []byte("1s msg: "+t.UTC().Local().Format("2006-01-02-15:04:05")))
 		err = c.WriteJSON(catch_1s(&oldNetInfos))
 		if err != nil {
 			log.Println(r.RemoteAddr, "|websocket write error:", err)
 			break
 		}
 		if count_5s%5 == 0 {
+			log.Printf("%s | %v\n", r.RemoteAddr, t.UTC().Local().Format("2006-01-02-15:04:05"))
 			count_5s = 0
 			err = c.WriteJSON(catch_5s())
 			if err != nil {
@@ -164,87 +161,20 @@ func start(w http.ResponseWriter, r *http.Request) {
 	log.Println(r.RemoteAddr, "|websocket exit")
 }
 
-func home(w http.ResponseWriter, r *http.Request) {
-	homeTemplate.Execute(w, "ws://"+r.Host+"/start")
+func system_info(w http.ResponseWriter, r *http.Request) {
+	cpuInfos, _ := cpu.Info()
+	hostInfo, _ := host.Info()
+	systemInfoJson, _ := json.Marshal(SystemInfo{cpuInfos, *hostInfo})
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(systemInfoJson)
 }
 
 func main() {
 	flag.Parse()
 	log.SetFlags(0)
 	http.HandleFunc("/start", start)
+	http.HandleFunc("/system_info", system_info)
 	http.Handle("/", http.FileServer(http.Dir("dist")))
-	// http.HandleFunc("/", home)
 	log.Fatal(http.ListenAndServe(*addr, nil))
 }
-
-var homeTemplate = template.Must(template.New("").Parse(`
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<script>  
-window.addEventListener("load", function(evt) {
-
-    var output = document.getElementById("output");
-    var input = document.getElementById("input");
-    var ws;
-
-    var print = function(message) {
-        var d = document.createElement("div");
-        d.textContent = message;
-        output.appendChild(d);
-        output.scroll(0, output.scrollHeight);
-    };
-
-    document.getElementById("open").onclick = function(evt) {
-        if (ws) {
-            return false;
-        }
-        ws = new WebSocket("{{.}}");
-        ws.onopen = function(evt) {
-            print("OPEN");
-        }
-        ws.onclose = function(evt) {
-            print("CLOSE");
-            ws = null;
-        }
-        ws.onmessage = function(evt) {
-            print(evt.data);
-        }
-        ws.onerror = function(evt) {
-            print("ERROR: " + evt.data);
-        }
-        return false;
-    };
-
-    document.getElementById("send").onclick = function(evt) {
-        if (!ws) {
-            return false;
-        }
-        print("SEND: " + input.value);
-        ws.send(input.value);
-        return false;
-    };
-
-    document.getElementById("close").onclick = function(evt) {
-        if (!ws) {
-            return false;
-        }
-        ws.close(1000, "close");
-        return false;
-    };
-
-});
-</script>
-</head>
-<body>
-<form style="margin-bottom: 2px">
-<button id="open">Open</button>
-<button id="close">Close</button>
-<input id="input" type="text" value="Hello world!">
-<button id="send">Send</button>
-</form>
-<div id="output" style="max-height: 93vh;overflow-y: scroll"></div>
-</body>
-</html>
-`))
