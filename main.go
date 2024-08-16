@@ -1,5 +1,10 @@
 package main
 
+/*
+#include "hddtemp.h"
+*/
+import "C"
+
 import (
 	"encoding/json"
 	"flag"
@@ -7,6 +12,7 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -16,8 +22,14 @@ import (
 	"github.com/shirou/gopsutil/v4/net"
 )
 
+func GoHddtemp(device string) int64 {
+	temp := C.hddtemp(C.CString(device))
+	return int64(temp)
+}
+
 // IOCounters(pernic bool)
 var addr = flag.String("addr", "0.0.0.0:8080", "http service address")
+var wsConnectionCount = 0
 
 type SystemInfo struct {
 	CpuInfos []cpu.InfoStat
@@ -49,6 +61,8 @@ type Catch1s struct {
 	Uptime       int64
 }
 
+var catch_1sData Catch1s
+
 type Catch5s struct {
 	Type       uint
 	Sensors    []SensorInfo
@@ -57,12 +71,17 @@ type Catch5s struct {
 	Temps      map[string]TemperatureStat
 }
 
+var catch_5sData Catch5s
+
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return true
 	}}
 
-func catch_1s(oldNetInfos *map[string]NetInfo) Catch1s {
+var rwMutex1s sync.RWMutex
+var rwMutex5s sync.RWMutex
+
+func catch_1s(oldNetInfos *map[string]NetInfo, data *Catch1s) {
 	percent, _ := cpu.Percent(0, true)
 	t := 0.0
 	n := 0
@@ -86,10 +105,12 @@ func catch_1s(oldNetInfos *map[string]NetInfo) Catch1s {
 
 	memStat, _ := mem.VirtualMemory()
 	uptime, _ := host.Uptime()
-	return Catch1s{1, int64(math.Round(t / float64(n))), percentInt,
+	rwMutex1s.Lock()
+	defer rwMutex1s.Unlock()
+	*data = Catch1s{1, int64(math.Round(t / float64(n))), percentInt,
 		int64(memStat.Total), int64(memStat.Total - memStat.Available), netInfos, int64(uptime)}
 }
-func catch_5s() Catch5s {
+func catch_5s(data *Catch5s) {
 	// diskInfos := []DiskInfo{}
 	// partitions, _ := disk.Partitions(false)
 	// counterStat, _ := disk.IOCounters("")
@@ -98,10 +119,12 @@ func catch_5s() Catch5s {
 	// 	diskInfos = append(diskInfos, DiskInfo{partition.Device, -1, int64(usageStat.Total), int64(usageStat.Used),
 	// 		int64(counterStat[partition.Device].ReadCount), int64(counterStat[partition.Device].WriteCount)})
 	// }
-	diskInfos, _ := GetDiskInfos([]string{}, []string{}, []string{"tmpfs", "devtmpfs", "devfs", "iso9660", "overlay", "aufs", "squashfs"})
+	diskInfos, _ := GetDiskInfosUnraid()
 	temps, _ := GetTemps()
 	sensorInfos, _ := GetSensorInfos()
-	return Catch5s{5,
+	rwMutex5s.Lock()
+	defer rwMutex5s.Unlock()
+	*data = Catch5s{5,
 		sensorInfos,
 		// []DiskInfo{
 		// 	DiskInfo{"WDC_WD40EZRZ-00GXCB0_PL1331LAH3832H", 38 + int64(rand.Intn(5)), 3905110812000, 1634428668000},
@@ -122,11 +145,17 @@ func catch_5s() Catch5s {
 func start(w http.ResponseWriter, r *http.Request) {
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Print(r.RemoteAddr, "|websocket upgrade error:", err)
+		log.Printf("%s|websocket upgrade error:%s\n", r.RemoteAddr, err)
 		return
 	}
+	if wsConnectionCount < 0 {
+		wsConnectionCount = 1
+	} else {
+		wsConnectionCount++
+	}
 	c.SetCloseHandler(func(code int, text string) error {
-		log.Printf("%s|websocket close: code %d, %s", r.RemoteAddr, code, text)
+		wsConnectionCount--
+		log.Printf("%s|websocket close: code %d, %s\n", r.RemoteAddr, code, text)
 		c.Close()
 		return nil
 	})
@@ -140,25 +169,30 @@ func start(w http.ResponseWriter, r *http.Request) {
 	}()
 	ticker := time.NewTicker(time.Second)
 	count_5s := 0
-	oldNetInfos := make(map[string]NetInfo)
-	for t := range ticker.C {
-		err = c.WriteJSON(catch_1s(&oldNetInfos))
+	// oldNetInfos := make(map[string]NetInfo)
+	for range ticker.C {
+		// err = c.WriteJSON(catch_1s(&oldNetInfos))
+		rwMutex1s.RLock()
+		err = c.WriteJSON(catch_1sData)
+		rwMutex1s.RUnlock()
 		if err != nil {
-			log.Println(r.RemoteAddr, "|websocket write error:", err)
+			log.Printf("%s|websocket write error:%s\n", r.RemoteAddr, err)
 			break
 		}
 		if count_5s%5 == 0 {
-			log.Printf("%s | %v\n", r.RemoteAddr, t.UTC().Local().Format("2006-01-02-15:04:05"))
 			count_5s = 0
-			err = c.WriteJSON(catch_5s())
+			log.Printf("%s|websocket sending\n", r.RemoteAddr)
+			rwMutex5s.RLock()
+			err = c.WriteJSON(catch_5sData)
+			rwMutex5s.RUnlock()
 			if err != nil {
-				log.Println(r.RemoteAddr, "|websocket write error:", err)
+				log.Printf("%s|websocket write error:%s", r.RemoteAddr, err)
 				break
 			}
 		}
 		count_5s++
 	}
-	log.Println(r.RemoteAddr, "|websocket exit")
+	log.Printf("%s|websocket exit", r.RemoteAddr)
 }
 
 func system_info(w http.ResponseWriter, r *http.Request) {
@@ -170,11 +204,55 @@ func system_info(w http.ResponseWriter, r *http.Request) {
 	w.Write(systemInfoJson)
 }
 
+func gather1s() {
+	ticker := time.NewTicker(time.Second)
+	oldNetInfos := make(map[string]NetInfo)
+	pause := false
+	for range ticker.C {
+		if wsConnectionCount <= 0 && !pause {
+			pause = true
+		}
+		if wsConnectionCount > 0 && pause {
+			pause = false
+			oldNetInfos = make(map[string]NetInfo)
+		}
+		if pause {
+			continue
+		}
+		catch_1s(&oldNetInfos, &catch_1sData)
+	}
+	log.Println("gather 1s exit")
+}
+
+func gather5s() {
+	ticker := time.NewTicker(time.Second * 5)
+	pause := false
+	for range ticker.C {
+		if wsConnectionCount <= 0 && !pause {
+			pause = true
+		}
+		if wsConnectionCount > 0 && pause {
+			pause = false
+		}
+		if pause {
+			continue
+		}
+		catch_5s(&catch_5sData)
+	}
+	log.Println("gather 5s exit")
+}
+
 func main() {
+	// GetDiskInfosUnraid()
 	flag.Parse()
-	log.SetFlags(0)
 	http.HandleFunc("/start", start)
 	http.HandleFunc("/system_info", system_info)
 	http.Handle("/", http.FileServer(http.Dir("dist")))
+	go gather1s()
+	go gather5s()
 	log.Fatal(http.ListenAndServe(*addr, nil))
+	// log.Print(GoHddtemp("/dev/sdb"))
+	// log.Print(GoHddtemp("/dev/sdc"))
+	// log.Print(GoHddtemp("/dev/sdd"))
+	// log.Print(GoHddtemp("/dev/sde"))
 }

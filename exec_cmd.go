@@ -75,10 +75,10 @@ func StdOutputTimeout(c *exec.Cmd, timeout time.Duration) ([]byte, error) {
 func Exec(binName string, arg ...string) ([]byte, error) {
 	path, err := exec.LookPath(binName)
 	if err != nil {
-		return nil, fmt.Errorf("looking up lsblk failed: %w", err)
+		return nil, fmt.Errorf("looking up %s failed: %w", binName, err)
 	}
 	if path == "" {
-		return nil, fmt.Errorf("no path specified for lsblk")
+		return nil, fmt.Errorf("no path specified for %s", binName)
 	}
 	// path := binName
 	cmd := exec.Command(path, arg...)
