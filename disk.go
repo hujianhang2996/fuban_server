@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -12,12 +14,24 @@ import (
 
 type DiskInfo struct {
 	Name       string
+	MD         bool
 	Path       string
 	Temp       int64
 	TotalSize  int64
 	UsedSize   int64
 	ReadCount  int64
 	WriteCount int64
+}
+
+type BlkInfo struct {
+	Name       string
+	Parent     string
+	Path       string
+	Type       string
+	FsSize     int64
+	FsUsed     int64
+	MountPoint string
+	Children   []BlkInfo
 }
 
 type MountOptions []string
@@ -68,6 +82,40 @@ func HasPrefix(s, prefix string) bool {
 	return len(s) >= len(prefix) && s[0:len(prefix)] == prefix
 }
 
+func parseBlkInfo(blockdevice interface{}, parent string) BlkInfo {
+	blockdeviceObj := blockdevice.(map[string]interface{})
+	blkInfo := BlkInfo{}
+	blkInfo.Name = blockdeviceObj["name"].(string)
+	blkInfo.Parent = parent
+	blkInfo.Path = blockdeviceObj["path"].(string)
+	blkInfo.Type = blockdeviceObj["type"].(string)
+	if blockdeviceObj["fssize"] != nil {
+		fssize, _ := strconv.Atoi(blockdeviceObj["fssize"].(string))
+		blkInfo.FsSize = int64(fssize)
+	}
+	if blockdeviceObj["fsused"] != nil {
+		fsused, _ := strconv.Atoi(blockdeviceObj["fsused"].(string))
+		blkInfo.FsUsed = int64(fsused)
+	}
+	if blockdeviceObj["mountpoint"] != nil {
+		blkInfo.MountPoint = blockdeviceObj["mountpoint"].(string)
+	}
+
+	if blockdeviceObj["children"] != nil {
+		blkInfo.Children = []BlkInfo{}
+		for _, child := range blockdeviceObj["children"].([]interface{}) {
+			blkInfo.Children = append(blkInfo.Children, parseBlkInfo(child, blkInfo.Name))
+		}
+	}
+	return blkInfo
+}
+
+type ByName []DiskInfo
+
+func (a ByName) Len() int           { return len(a) }
+func (a ByName) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a ByName) Less(i, j int) bool { return a[i].Name < a[j].Name }
+
 func GetDiskInfosUnraid() ([]DiskInfo, error) {
 	diskInfos := []DiskInfo{}
 	content, err := os.ReadFile("/proc/mdstat")
@@ -76,13 +124,9 @@ func GetDiskInfosUnraid() ([]DiskInfo, error) {
 	}
 	lines := strings.Split(strings.TrimSpace(string(content)), "\n")
 	mdInfos := [](map[string]string){}
-	mdNumDisks := 0
 	crrentIdx := -1
 	started := false
 	for _, line := range lines {
-		if HasPrefix(line, "mdNumDisks") {
-			mdNumDisks, _ = strconv.Atoi(strings.Split(strings.TrimSpace(line), "=")[1])
-		}
 		if HasPrefix(line, "diskNumber") {
 			started = true
 		}
@@ -92,9 +136,6 @@ func GetDiskInfosUnraid() ([]DiskInfo, error) {
 		keyNumAndValue := strings.Split(strings.TrimSpace(line), "=")
 		keyNum := strings.Split(keyNumAndValue[0], ".")
 		idx, _ := strconv.Atoi(keyNum[1])
-		if idx >= mdNumDisks {
-			break
-		}
 		if idx > crrentIdx {
 			mdInfos = append(mdInfos, map[string]string{})
 			crrentIdx = idx
@@ -102,100 +143,92 @@ func GetDiskInfosUnraid() ([]DiskInfo, error) {
 		mdInfos[crrentIdx][keyNum[0]] = keyNumAndValue[1]
 	}
 
-	out, err := Exec("lsblk", "-P", "-b", "-o", "NAME,PATH,TYPE,FSSIZE,FSUSED,MOUNTPOINT")
+	out, err := Exec("lsblk", "-J", "-b", "-o", "NAME,PATH,TYPE,FSSIZE,FSUSED,MOUNTPOINT")
 	if err != nil {
 		return nil, fmt.Errorf("failed to run command lsblk: %w - %s", err, string(out))
 	}
-
-	blkInfos := map[string](map[string]string){}
-	lines1 := strings.Split(strings.TrimSpace(string(out)), "\n")
-	for _, line := range lines1 {
-		blkInfo := map[string]string{}
-		pairs := strings.Split(strings.TrimSpace(string(line)), " ")
-		name := ""
-		for _, pair := range pairs {
-			kv := strings.Split(strings.TrimSpace(string(pair)), "=")
-			if kv[0] == "NAME" {
-				name = strings.Trim(kv[1], "\"")
-			} else {
-				blkInfo[kv[0]] = strings.Trim(kv[1], "\"")
-			}
-		}
-		blkInfos[name] = blkInfo
+	var outJson *map[string]interface{}
+	json.Unmarshal(out, &outJson)
+	blkInfos := map[string]BlkInfo{}
+	for _, blockdevice := range (*outJson)["blockdevices"].([]interface{}) {
+		blkInfo := parseBlkInfo(blockdevice, "")
+		blkInfos[blkInfo.Name] = blkInfo
 	}
+	// blkInfos := map[string](map[string]string){}
+	// lines1 := strings.Split(strings.TrimSpace(string(out)), "\n")
+	// for _, line := range lines1 {
+	// 	blkInfo := map[string]string{}
+	// 	pairs := strings.Split(strings.TrimSpace(string(line)), " ")
+	// 	name := ""
+	// 	for _, pair := range pairs {
+	// 		kv := strings.Split(strings.TrimSpace(string(pair)), "=")
+	// 		if kv[0] == "NAME" {
+	// 			name = strings.Trim(kv[1], "\"")
+	// 		} else {
+	// 			blkInfo[kv[0]] = strings.Trim(kv[1], "\"")
+	// 		}
+	// 	}
+	// 	blkInfos[name] = blkInfo
+	// }
+	blksInMd := map[string]bool{}
 	for _, mdInfo := range mdInfos {
+		if mdInfo["diskName"] == "" && mdInfo["rdevName"] == "" && mdInfo["diskId"] == "" {
+			continue
+		}
+		blksInMd[mdInfo["diskName"]] = len(mdInfo["diskName"]) > 0
+		blksInMd[mdInfo["rdevName"]] = len(mdInfo["rdevName"]) > 0
 		diskInfo := DiskInfo{}
 		diskInfo.Name = mdInfo["diskId"]
-		if mdInfo["diskName"] != "" {
-			diskInfo.Path = blkInfos[mdInfo["diskName"]]["MOUNTPOINT"]
-			totalSize, _ := strconv.Atoi(blkInfos[mdInfo["diskName"]]["FSSIZE"])
-			diskInfo.TotalSize = int64(totalSize)
-			usedSize, _ := strconv.Atoi(blkInfos[mdInfo["diskName"]]["FSUSED"])
-			diskInfo.UsedSize = int64(usedSize)
-		}
+		diskInfo.MD = true
+		diskInfo.Path = blkInfos[mdInfo["diskName"]].MountPoint
+		diskInfo.TotalSize = blkInfos[mdInfo["diskName"]].FsSize
+		diskInfo.UsedSize = blkInfos[mdInfo["diskName"]].FsUsed
 		rdevReads, _ := strconv.Atoi(mdInfo["rdevReads"])
 		diskInfo.ReadCount = int64(rdevReads)
 		rdevWrites, _ := strconv.Atoi(mdInfo["rdevWrites"])
 		diskInfo.WriteCount = int64(rdevWrites)
-		// path := blkInfos[mdInfo["rdevName"]]["PATH"]
-		// tempOut, err := Exec("smartctl", "-j", "-a", path)
-		// if err != nil {
-		// 	diskInfos = append(diskInfos, diskInfo)
-		// 	continue
-		// }
-		// var tempOutJson map[string]interface{}
-		// json.Unmarshal(tempOut, &tempOutJson)
-		// temperatureInter := tempOutJson["temperature"]
-		// temperature := temperatureInter.(map[string]interface{})["current"].(float64)
-		path := blkInfos[mdInfo["rdevName"]]["PATH"]
-		// tempOut, err := Exec("hddtemp", path)
-		// if err != nil {
-		// 	diskInfos = append(diskInfos, diskInfo)
-		// 	continue
-		// }
-		// temperature, err := strconv.Atoi(strings.Trim(string(tempOut), "\n"))
-		// if err != nil {
-		// 	diskInfos = append(diskInfos, diskInfo)
-		// 	continue
-		// }
-		diskInfo.Temp = GoHddtemp(path)
+		path := blkInfos[mdInfo["rdevName"]].Path
+		tempOut, err := Exec("hddtemp", "-n", path)
+		if err != nil {
+			diskInfos = append(diskInfos, diskInfo)
+			continue
+		}
+		temperature, err := strconv.Atoi(strings.Trim(string(tempOut), "\n"))
+		if err != nil {
+			diskInfos = append(diskInfos, diskInfo)
+			continue
+		}
+		diskInfo.Temp = int64(temperature)
 		diskInfos = append(diskInfos, diskInfo)
 	}
-	// for _, line := range lines1 {
-	// 	diskInfo := DiskInfo{}
-	// 	pairs := strings.Split(strings.TrimSpace(string(line)), " ")
-	// 	diskName := ""
-	// 	diskType := ""
-	// 	diskPath := ""
-	// 	diskSize := 0
-	// 	for _, pair := range pairs {
-	// 		kv := strings.Split(strings.TrimSpace(string(pair)), "=")
-	// 		if kv[0] == "NAME" {
-	// 			diskName = strings.Trim(kv[1], "\"")
-	// 		}
-	// 		if kv[0] == "TYPE" {
-	// 			diskType = strings.Trim(kv[1], "\"")
-	// 		}
-	// 		if kv[0] == "PATH" {
-	// 			diskPath = strings.Trim(kv[1], "\"")
-	// 		}
-	// 		if kv[0] == "SIZE" {
-	// 			diskSize, _ = strconv.Atoi(strings.Trim(kv[1], "\""))
-	// 		}
-	// 	}
-	// 	if diskType == "disk" {
-	// 		diskInfo.Name = diskName
-	// 		diskInfo.Path = diskPath
-	// 		diskInfo.TotalSize = int64(diskSize)
-	// 		counterStat, _ := disk.IOCounters(diskName)
-	// 		diskInfo.ReadCount = int64(counterStat[diskName].MergedReadCount)
-	// 		diskInfo.WriteCount = int64(counterStat[diskName].MergedWriteCount)
-	// 		out, _ := Exec("hddtemp", "-n", filepath.Join("/dev", diskName))
-	// 		temp, _ := strconv.Atoi(strings.Trim(string(out), "\n"))
-	// 		diskInfo.Temp = int64(temp)
-	// 		diskInfos = append(diskInfos, diskInfo)
-	// 	}
-	// }
+	for blkName, blkInfo := range blkInfos {
+		if blksInMd[blkName] {
+			continue
+		}
+		if blkInfo.Type != "disk" {
+			continue
+		}
+		diskInfo := DiskInfo{}
+		diskInfo.MD = false
+		diskInfo.Name = blkName
+		diskInfo.Path = blkInfo.MountPoint
+		diskInfo.TotalSize = blkInfo.FsSize
+		diskInfo.UsedSize = blkInfo.FsUsed
+		path := blkInfo.Path
+		tempOut, err := Exec("hddtemp", path)
+		if err != nil {
+			diskInfos = append(diskInfos, diskInfo)
+			continue
+		}
+		temperature, err := strconv.Atoi(strings.Trim(string(tempOut), "\n"))
+		if err != nil {
+			diskInfos = append(diskInfos, diskInfo)
+			continue
+		}
+		diskInfo.Temp = int64(temperature)
+		diskInfos = append(diskInfos, diskInfo)
+	}
+	sort.Sort(ByName(diskInfos))
 	return diskInfos, nil
 }
 

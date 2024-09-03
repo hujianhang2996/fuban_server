@@ -1,3 +1,5 @@
+//go:build !windows
+
 package main
 
 import (
@@ -10,6 +12,7 @@ import (
 	"time"
 )
 
+const CmdTimeout = time.Duration(5 * time.Second)
 const KillGrace = 5 * time.Second
 
 func WaitTimeout(c *exec.Cmd, timeout time.Duration) error {

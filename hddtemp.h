@@ -1,1 +1,0 @@
-int hddtemp(char *device);

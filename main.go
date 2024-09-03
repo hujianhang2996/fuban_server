@@ -1,20 +1,15 @@
 package main
 
-/*
-#include "hddtemp.h"
-*/
-import "C"
-
 import (
-	"encoding/json"
 	"flag"
 	"log"
 	"math"
-	"math/rand"
 	"net/http"
 	"sync"
 	"time"
 
+	"github.com/gin-contrib/cors"
+	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/host"
@@ -22,13 +17,7 @@ import (
 	"github.com/shirou/gopsutil/v4/net"
 )
 
-func GoHddtemp(device string) int64 {
-	temp := C.hddtemp(C.CString(device))
-	return int64(temp)
-}
-
 // IOCounters(pernic bool)
-var addr = flag.String("addr", "0.0.0.0:8080", "http service address")
 var wsConnectionCount = 0
 
 type SystemInfo struct {
@@ -39,16 +28,6 @@ type SystemInfo struct {
 type NetInfo struct {
 	UpSpeed   int64
 	DownSpeed int64
-}
-
-type ContainerInfo struct {
-	Name    string
-	Status  int64
-	HostNet bool
-	Port    string
-	Volume  string
-	CpuLoad float64
-	MemLoad float64
 }
 
 type Catch1s struct {
@@ -122,30 +101,16 @@ func catch_5s(data *Catch5s) {
 	diskInfos, _ := GetDiskInfosUnraid()
 	temps, _ := GetTemps()
 	sensorInfos, _ := GetSensorInfos()
+	containerInfos, _ := getContainers()
 	rwMutex5s.Lock()
 	defer rwMutex5s.Unlock()
-	*data = Catch5s{5,
-		sensorInfos,
-		// []DiskInfo{
-		// 	DiskInfo{"WDC_WD40EZRZ-00GXCB0_PL1331LAH3832H", 38 + int64(rand.Intn(5)), 3905110812000, 1634428668000},
-		// 	DiskInfo{"WDC_WD40EZRZ-00GXCB0_PL2331LAH0NP5J", 38 + int64(rand.Intn(5)), 3905110812000, 1134428668000},
-		// 	DiskInfo{"ST4000VX007_ZA4M1D1O", 38 + int64(rand.Intn(5)), 3905110812000, 634428668000},
-		// 	DiskInfo{"ST1000VM002-1ET162_S5131DBZ", 38 + int64(rand.Intn(5)), 3905110812000, 2534428668000},
-		// },
-		diskInfos,
-		[]ContainerInfo{
-			ContainerInfo{"emby", 1, true, "8096:8096", "/mnt:/olympos", 0.1 + rand.Float64()*0.02, 3 + rand.Float64()},
-			ContainerInfo{"nas-tools", 1, false, "3000:3000", "/config:/mnt/user/appdata/nas-tools", 0.1 + rand.Float64()*0.02, 3 + rand.Float64()},
-			ContainerInfo{"GoStatic", 0, false, "8043:8043", "/olympos:/mnt", 0.1 + rand.Float64()*0.02, 3 + rand.Float64()},
-			ContainerInfo{"aria2-pro", 1, false, "6800:6800,6888:6888", "/downloads:/mnt/user/downloads", 0.1 + rand.Float64()*0.02, 3 + rand.Float64()},
-			ContainerInfo{"prowlarr", 1, false, "9696:9696", "/config:/mnt/user/appdata/prowlarr", 0.1 + rand.Float64()*0.02, 3 + rand.Float64()},
-		}, temps}
+	*data = Catch5s{5, sensorInfos, diskInfos, containerInfos, temps}
 }
 
-func start(w http.ResponseWriter, r *http.Request) {
-	c, err := upgrader.Upgrade(w, r, nil)
+func start(c *gin.Context) {
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		log.Printf("%s|websocket upgrade error:%s\n", r.RemoteAddr, err)
+		log.Printf("%s|websocket upgrade error:%s\n", c.Request.RemoteAddr, err)
 		return
 	}
 	if wsConnectionCount < 0 {
@@ -153,15 +118,15 @@ func start(w http.ResponseWriter, r *http.Request) {
 	} else {
 		wsConnectionCount++
 	}
-	c.SetCloseHandler(func(code int, text string) error {
+	conn.SetCloseHandler(func(code int, text string) error {
 		wsConnectionCount--
-		log.Printf("%s|websocket close: code %d, %s\n", r.RemoteAddr, code, text)
-		c.Close()
+		log.Printf("%s|websocket close: code %d, %s\n", c.Request.RemoteAddr, code, text)
+		conn.Close()
 		return nil
 	})
 	go func() {
 		for {
-			_, _, err := c.ReadMessage()
+			_, _, err := conn.ReadMessage()
 			if err != nil {
 				break
 			}
@@ -173,35 +138,32 @@ func start(w http.ResponseWriter, r *http.Request) {
 	for range ticker.C {
 		// err = c.WriteJSON(catch_1s(&oldNetInfos))
 		rwMutex1s.RLock()
-		err = c.WriteJSON(catch_1sData)
+		err = conn.WriteJSON(catch_1sData)
 		rwMutex1s.RUnlock()
 		if err != nil {
-			log.Printf("%s|websocket write error:%s\n", r.RemoteAddr, err)
+			log.Printf("%s|websocket write error:%s\n", c.Request.RemoteAddr, err)
 			break
 		}
 		if count_5s%5 == 0 {
 			count_5s = 0
-			log.Printf("%s|websocket sending\n", r.RemoteAddr)
+			log.Printf("%s|websocket sending\n", c.Request.RemoteAddr)
 			rwMutex5s.RLock()
-			err = c.WriteJSON(catch_5sData)
+			err = conn.WriteJSON(catch_5sData)
 			rwMutex5s.RUnlock()
 			if err != nil {
-				log.Printf("%s|websocket write error:%s", r.RemoteAddr, err)
+				log.Printf("%s|websocket write error:%s", c.Request.RemoteAddr, err)
 				break
 			}
 		}
 		count_5s++
 	}
-	log.Printf("%s|websocket exit", r.RemoteAddr)
+	log.Printf("%s|websocket exit", c.Request.RemoteAddr)
 }
 
-func system_info(w http.ResponseWriter, r *http.Request) {
+func system_info(c *gin.Context) {
 	cpuInfos, _ := cpu.Info()
 	hostInfo, _ := host.Info()
-	systemInfoJson, _ := json.Marshal(SystemInfo{cpuInfos, *hostInfo})
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(systemInfoJson)
+	c.JSON(http.StatusOK, gin.H{"CpuInfos": cpuInfos, "HostInfo": *hostInfo})
 }
 
 func gather1s() {
@@ -242,17 +204,56 @@ func gather5s() {
 	log.Println("gather 5s exit")
 }
 
+var do = init_dataopt()
+
 func main() {
-	// GetDiskInfosUnraid()
 	flag.Parse()
-	http.HandleFunc("/start", start)
-	http.HandleFunc("/system_info", system_info)
-	http.Handle("/", http.FileServer(http.Dir("dist")))
+	// genRsaKey()
+	r := gin.Default()
+	r.Use(cors.New(cors.Config{
+		AllowOrigins: []string{"*"},
+		AllowMethods: []string{"*"},
+		AllowHeaders: []string{"Authorization", "Content-Type"},
+	}))
+	//=============================静态文件=============================
+	r.Static("/main", "../dist")
+	r.GET("/", func(c *gin.Context) {
+		c.Redirect(http.StatusMovedPermanently, "/main")
+	})
+	//==========================登录和JWT验证===========================
+	r.POST("/login", login)
+	r.POST("/auth", jwtAuth)
+
+	//==============================API================================
+	api := r.Group("/api")
+	api.Use(jwtParseMiddleWare)
+	api.GET("/ws", start)
+	//======================GET======================
+	api.POST("/system_info", system_info)
+	api.POST("/navs", do.navs)
+	api.POST("/unselected_nets", do.unselected_nets)
+	api.POST("/selected_sensors", do.selected_sensors)
+	api.POST("/username", do.username)
+	api.POST("/cpu_and_mem_temp", do.cpu_and_mem_temp)
+	//======================SET======================
+	api.POST("/set/nav", do.change_nav)
+	api.POST("/set/selected_sensor", do.change_selected_sensor)
+	api.POST("/set/unselected_nets", do.change_unselected_nets)
+	api.POST("/set/username", do.change_username)
+	api.POST("/set/password", do.change_password)
+	api.POST("/set/cpu_and_mb_temp", do.change_cpu_and_mb_temp)
+	api.POST("/set/switch_nav", do.switch_nav)
+	api.POST("/control-container", controlContainer)
+	//====================DELETE=====================
+	api.POST("/delete/nav", do.delete_nav)
+	api.POST("/delete/selected_sensor", do.delete_selected_sensor)
+	api.POST("/delete/unselected_net", do.delete_unselected_net)
+	//======================ADD======================
+	api.POST("/add/nav", do.add_nav)
+	api.POST("/add/selected_sensor", do.add_selected_sensor)
+	api.POST("/add/unselected_net", do.add_unselected_net)
+
 	go gather1s()
 	go gather5s()
-	log.Fatal(http.ListenAndServe(*addr, nil))
-	// log.Print(GoHddtemp("/dev/sdb"))
-	// log.Print(GoHddtemp("/dev/sdc"))
-	// log.Print(GoHddtemp("/dev/sdd"))
-	// log.Print(GoHddtemp("/dev/sde"))
+	r.Run("0.0.0.0:8080")
 }

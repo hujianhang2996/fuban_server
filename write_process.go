@@ -53,7 +53,7 @@ func (h *Hub) run() {
 	}
 }
 
-func test() {
+func test1() {
 	hub := newHub()
 	go hub.run()
 

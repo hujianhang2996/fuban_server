@@ -6,10 +6,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"time"
 )
-
-const CmdTimeout = time.Duration(5 * time.Second)
 
 type SensorValue struct {
 	Name  string
