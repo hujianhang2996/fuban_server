@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/shirou/gopsutil/v4/cpu"
@@ -210,11 +209,11 @@ func main() {
 	flag.Parse()
 	// genRsaKey()
 	r := gin.Default()
-	r.Use(cors.New(cors.Config{
-		AllowOrigins: []string{"*"},
-		AllowMethods: []string{"*"},
-		AllowHeaders: []string{"Authorization", "Content-Type"},
-	}))
+	// r.Use(cors.New(cors.Config{
+	// 	AllowOrigins: []string{"*"},
+	// 	AllowMethods: []string{"*"},
+	// 	AllowHeaders: []string{"Authorization", "Content-Type"},
+	// }))
 	//=============================静态文件=============================
 	r.Static("/main", "../dist")
 	r.GET("/", func(c *gin.Context) {
