@@ -165,7 +165,7 @@ func (do *DataOpt) add_nav(c *gin.Context) {
 	result := do.db.Find(&navs)
 	nav.Pos = uint(result.RowsAffected) + 1
 	do.db.Select("Pos", "Name", "Url", "Icon").Create(&nav)
-	c.JSON(http.StatusOK, gin.H{"type": "success", "message": ""})
+	c.JSON(http.StatusOK, gin.H{"type": "success", "message": "Added successfully"})
 }
 
 // Read  ----------------------------------------------------------------
@@ -222,7 +222,7 @@ func (do *DataOpt) change_username(c *gin.Context) {
 	}
 	new_name := input["username"].(string)
 	do.db.Model(&StaticInfo{}).Where("info_name = ?", "username").Update("info_value", new_name)
-	c.JSON(http.StatusOK, gin.H{"type": "success", "message": ""})
+	c.JSON(http.StatusOK, gin.H{"type": "success", "message": "Modified successfully"})
 }
 
 func (do *DataOpt) change_password(c *gin.Context) {
@@ -249,7 +249,7 @@ func (do *DataOpt) change_password(c *gin.Context) {
 	}
 	new_password, _ := argon2id.CreateHash(decoded_new_password, argon2id.DefaultParams)
 	do.db.Model(&StaticInfo{}).Where("info_name = ?", "password").Update("info_value", new_password)
-	c.JSON(http.StatusOK, gin.H{"type": "success", "message": ""})
+	c.JSON(http.StatusOK, gin.H{"type": "success", "message": "Modified successfully"})
 }
 
 func (do *DataOpt) change_cpu_and_mb_temp(c *gin.Context) {
@@ -262,7 +262,7 @@ func (do *DataOpt) change_cpu_and_mb_temp(c *gin.Context) {
 	mb := input["mb"].(string)
 	do.db.Model(&StaticInfo{}).Where("info_name = ?", "cpu_temp_name").Update("info_value", cpu)
 	do.db.Model(&StaticInfo{}).Where("info_name = ?", "mb_temp_name").Update("info_value", mb)
-	c.JSON(http.StatusOK, gin.H{"type": "success", "message": ""})
+	c.JSON(http.StatusOK, gin.H{"type": "success", "message": "Modified successfully"})
 }
 
 func (do *DataOpt) change_selected_sensor(c *gin.Context) {
@@ -272,7 +272,7 @@ func (do *DataOpt) change_selected_sensor(c *gin.Context) {
 		return
 	}
 	do.db.Model(&SelectedSensor{}).Where("name = ?", sensor.Name).Updates(sensor)
-	c.JSON(http.StatusOK, gin.H{"type": "success", "message": ""})
+	c.JSON(http.StatusOK, gin.H{"type": "success", "message": "Modified successfully"})
 }
 
 func (do *DataOpt) change_unselected_nets(c *gin.Context) {
@@ -283,7 +283,7 @@ func (do *DataOpt) change_unselected_nets(c *gin.Context) {
 	}
 	unselected_nets := input["unselected_nets"].(string)
 	do.db.Model(&StaticInfo{}).Where("info_name = ?", "unselected_nets").Update("info_value", unselected_nets)
-	c.JSON(http.StatusOK, gin.H{"type": "success", "message": ""})
+	c.JSON(http.StatusOK, gin.H{"type": "success", "message": "Modified successfully"})
 }
 
 func (do *DataOpt) change_nav(c *gin.Context) {
@@ -293,7 +293,7 @@ func (do *DataOpt) change_nav(c *gin.Context) {
 		return
 	}
 	do.db.Model(&Nav{}).Where("id = ?", nav.ID).Updates(nav)
-	c.JSON(http.StatusOK, gin.H{"type": "success", "message": ""})
+	c.JSON(http.StatusOK, gin.H{"type": "success", "message": "Modified successfully"})
 }
 
 func (do *DataOpt) switch_nav(c *gin.Context) {
@@ -313,7 +313,7 @@ func (do *DataOpt) switch_nav(c *gin.Context) {
 		do.db.Model(&Nav{}).Where("pos > ? AND pos <= ?", from, to).Update("pos", gorm.Expr("pos - 1"))
 	}
 	do.db.Model(&nav).Update("pos", to)
-	c.JSON(http.StatusOK, gin.H{"type": "success", "message": ""})
+	c.JSON(http.StatusOK, gin.H{"type": "success", "message": "Modified successfully"})
 }
 
 // Delete----------------------------------------------------------------
@@ -359,7 +359,7 @@ func (do *DataOpt) delete_nav(c *gin.Context) {
 	do.db.First(&nav, id)
 	do.db.Model(&Nav{}).Where("pos >= ?", nav.Pos).Update("pos", gorm.Expr("pos - 1"))
 	do.db.Delete(&Nav{ID: id})
-	c.JSON(http.StatusOK, gin.H{"type": "success", "message": ""})
+	c.JSON(http.StatusOK, gin.H{"type": "success", "message": "Deleted successfully"})
 }
 
 // func ss() {

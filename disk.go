@@ -90,12 +90,22 @@ func parseBlkInfo(blockdevice interface{}, parent string) BlkInfo {
 	blkInfo.Path = blockdeviceObj["path"].(string)
 	blkInfo.Type = blockdeviceObj["type"].(string)
 	if blockdeviceObj["fssize"] != nil {
-		fssize, _ := strconv.Atoi(blockdeviceObj["fssize"].(string))
-		blkInfo.FsSize = int64(fssize)
+		switch blockdeviceObj["fssize"].(type) {
+		case float64:
+			blkInfo.FsSize = int64(blockdeviceObj["fssize"].(float64))
+		case string:
+			fssize, _ := strconv.Atoi(blockdeviceObj["fssize"].(string))
+			blkInfo.FsSize = int64(fssize)
+		}
 	}
 	if blockdeviceObj["fsused"] != nil {
-		fsused, _ := strconv.Atoi(blockdeviceObj["fsused"].(string))
-		blkInfo.FsUsed = int64(fsused)
+		switch blockdeviceObj["fsused"].(type) {
+		case float64:
+			blkInfo.FsUsed = int64(blockdeviceObj["fsused"].(float64))
+		case string:
+			fsused, _ := strconv.Atoi(blockdeviceObj["fsused"].(string))
+			blkInfo.FsUsed = int64(fsused)
+		}
 	}
 	if blockdeviceObj["mountpoint"] != nil {
 		blkInfo.MountPoint = blockdeviceObj["mountpoint"].(string)
@@ -112,9 +122,14 @@ func parseBlkInfo(blockdevice interface{}, parent string) BlkInfo {
 
 type ByName []DiskInfo
 
-func (a ByName) Len() int           { return len(a) }
-func (a ByName) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a ByName) Less(i, j int) bool { return a[i].Name < a[j].Name }
+func (a ByName) Len() int      { return len(a) }
+func (a ByName) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a ByName) Less(i, j int) bool {
+	if a[i].MD && a[j].MD {
+		return a[i].Path < a[j].Path
+	}
+	return a[i].Name < a[j].Name
+}
 
 func GetDiskInfosUnraid() ([]DiskInfo, error) {
 	diskInfos := []DiskInfo{}
@@ -188,7 +203,7 @@ func GetDiskInfosUnraid() ([]DiskInfo, error) {
 		rdevWrites, _ := strconv.Atoi(mdInfo["rdevWrites"])
 		diskInfo.WriteCount = int64(rdevWrites)
 		path := blkInfos[mdInfo["rdevName"]].Path
-		tempOut, err := Exec("hddtemp", "-n", path)
+		tempOut, err := Exec("hddtemp", path)
 		if err != nil {
 			diskInfos = append(diskInfos, diskInfo)
 			continue
