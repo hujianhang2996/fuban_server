@@ -11,6 +11,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/shirou/gopsutil/v4 v4.24.7
+	github.com/tidwall/gjson v1.17.3
 	github.com/we7coreteam/w7-rangine-go/v2 v2.0.0
 	gorm.io/driver/sqlite v1.5.5
 	gorm.io/gorm v1.25.7-0.20240204074919-46816ad31dde
@@ -57,6 +58,8 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect
 	github.com/shoenig/go-m1cpu v0.1.6 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect

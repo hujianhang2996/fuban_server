@@ -166,9 +166,8 @@ func system_info(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"CpuInfos": cpuInfos, "HostInfo": *hostInfo})
 }
 
-func gather1s() {
+func gather1s(oldNetInfos map[string]NetInfo) {
 	ticker := time.NewTicker(time.Second)
-	oldNetInfos := make(map[string]NetInfo)
 	pause := false
 	for range ticker.C {
 		if wsConnectionCount <= 0 && !pause {
@@ -211,6 +210,12 @@ func main() {
 	var release = flag.Bool("release", false, "release mode")
 	flag.Parse()
 	RELEASE = *release
+	oldNetInfos := make(map[string]NetInfo)
+	catch_1s(&oldNetInfos, &catch_1sData)
+	catch_5s(&catch_5sData)
+	go gather1s(oldNetInfos)
+	go gather5s()
+
 	genRsaKey()
 	if RELEASE {
 		gin.SetMode(gin.ReleaseMode)
@@ -262,7 +267,5 @@ func main() {
 	api.POST("/add/selected_sensor", do.add_selected_sensor)
 	api.POST("/add/unselected_net", do.add_unselected_net)
 
-	go gather1s()
-	go gather5s()
 	r.Run("0.0.0.0:8080")
 }

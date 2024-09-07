@@ -2,17 +2,18 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	dockertypes "github.com/docker/docker/api/types"
 	containertypes "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 )
 
 type ContainerInfo struct {
@@ -30,8 +31,6 @@ var dockerCtx = context.Background()
 var dockerCli, _ = client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 
 func getContainers() ([]ContainerInfo, error) {
-
-	defer dockerCli.Close()
 	listOptions := containertypes.ListOptions{}
 	listOptions.All = true
 	containers, err := dockerCli.ContainerList(dockerCtx, listOptions)
@@ -50,8 +49,11 @@ func getContainers() ([]ContainerInfo, error) {
 		}
 		containerInfo.State = container.State
 		containerInfo.Volumes = container.Mounts
-
-		statRow, err := dockerCli.ContainerStats(dockerCtx, container.ID, false)
+		if containerInfo.State != "running" {
+			containerInfos = append(containerInfos, containerInfo)
+			continue
+		}
+		statRow, err := dockerCli.ContainerStatsOneShot(dockerCtx, container.ID)
 		if err != nil {
 			containerInfos = append(containerInfos, containerInfo)
 			continue
@@ -62,17 +64,26 @@ func getContainers() ([]ContainerInfo, error) {
 			containerInfos = append(containerInfos, containerInfo)
 			continue
 		}
-		var v map[string]interface{}
-		json.Unmarshal(statInfo, &v)
-		memStat := v["memory_stats"].(map[string]interface{})
-		if len(memStat) > 0 {
-			containerInfo.MemLoad = memStat["usage"].(float64) / memStat["limit"].(float64) * 100
+		statInfoStr := string(statInfo)
+		memUsage := gjson.Get(statInfoStr, "memory_stats.usage").Num
+		memLimit := gjson.Get(statInfoStr, "memory_stats.limit").Num
+		if memLimit <= 0 {
+			containerInfo.MemLoad = 0
+		} else {
+			containerInfo.MemLoad = memUsage / memLimit * 100
+		}
+		cpuUsage := gjson.Get(statInfoStr, "cpu_stats.cpu_usage.total_usage").Num
+		systemCpuUsage := gjson.Get(statInfoStr, "cpu_stats.system_cpu_usage").Num
+		preCpuUsage := gjson.Get(statInfoStr, "precpu_stats.cpu_usage.total_usage").Num
+		preCystemCpuUsage := gjson.Get(statInfoStr, "precpu_stats.system_cpu_usage").Num
+		if systemCpuUsage-preCystemCpuUsage <= 0 {
+			containerInfo.CpuLoad = 0
+		} else {
+			containerInfo.CpuLoad = (cpuUsage - preCpuUsage) / (systemCpuUsage - preCystemCpuUsage) * 100
 		}
 		containerInfos = append(containerInfos, containerInfo)
 	}
-
 	return containerInfos, nil
-
 }
 
 func controlContainer(ctx *gin.Context) {
@@ -115,7 +126,7 @@ func controlContainer(ctx *gin.Context) {
 }
 
 func test() {
-	statRow, err := dockerCli.ContainerStats(dockerCtx, "2c28528287d20ae7f5589ff15dd1b37ba0842f80ac684b21800b4a0f7a2e4c88", false)
+	statRow, err := dockerCli.ContainerStats(dockerCtx, "1c329d0609f7632a0f67b6a4eb8160db1760be4e3eac254185da74e1423d6898", false)
 	if err != nil {
 		return
 	}
@@ -123,9 +134,11 @@ func test() {
 	if err != nil {
 		return
 	}
-	defer statRow.Body.Close()
-	var v map[string]interface{}
-	json.Unmarshal(statInfo, &v)
-	MemLoad := v["memory_stats"].(map[string]interface{})["usage"].(float64) / v["memory_stats"].(map[string]interface{})["limit"].(float64) * 100
-	log.Print(MemLoad)
+	log.Print(string(statInfo))
+	time.Sleep(time.Second)
+	statInfo, err = io.ReadAll(statRow.Body)
+	if err != nil {
+		return
+	}
+	log.Print(string(statInfo))
 }
