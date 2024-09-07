@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/shirou/gopsutil/v4/cpu"
@@ -204,22 +205,31 @@ func gather5s() {
 }
 
 var do = init_dataopt()
+var RELEASE = false
 
 func main() {
+	var release = flag.Bool("release", false, "release mode")
 	flag.Parse()
-	// genRsaKey()
+	RELEASE = *release
+	genRsaKey()
+	if RELEASE {
+		gin.SetMode(gin.ReleaseMode)
+	}
 	r := gin.Default()
-	// r.Use(cors.New(cors.Config{
-	// 	AllowOrigins: []string{"*"},
-	// 	AllowMethods: []string{"*"},
-	// 	AllowHeaders: []string{"Authorization", "Content-Type"},
-	// }))
+	if !RELEASE {
+		r.Use(cors.New(cors.Config{
+			AllowOrigins: []string{"*"},
+			AllowMethods: []string{"*"},
+			AllowHeaders: []string{"Authorization", "Content-Type"},
+		}))
+	}
 	//=============================静态文件=============================
 	r.Static("/main", "../dist")
 	r.GET("/", func(c *gin.Context) {
 		c.Redirect(http.StatusMovedPermanently, "/main")
 	})
 	//==========================登录和JWT验证===========================
+	r.POST("/public_key", getPublicKey)
 	r.POST("/login", login)
 	r.POST("/auth", jwtAuth)
 

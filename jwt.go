@@ -13,7 +13,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var secretKey string = "qwertyuiop"
+var secretKey = do.jwt_secret()
 
 // const jwtExpTime = 60 * 24 * time.Hour
 // const jwtRefeshTime = 45 * 24 * time.Hour

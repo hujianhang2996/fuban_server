@@ -7,6 +7,7 @@ import (
 
 	"github.com/alexedwards/argon2id"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -89,7 +90,7 @@ func init_dataopt() DataOpt {
 	log.Print("DataOpt init")
 	do := DataOpt{}
 	var err error
-	do.db, err = gorm.Open(sqlite.Open("database.db"), &gorm.Config{
+	do.db, err = gorm.Open(sqlite.Open("/data/database.db"), &gorm.Config{
 		SkipDefaultTransaction: true,
 	})
 	if err != nil {
@@ -100,8 +101,8 @@ func init_dataopt() DataOpt {
 		do.db.AutoMigrate(&StaticInfo{})
 		do.db.Create(&StaticInfo{InfoName: "username", InfoValue: "admin"})
 		password, _ := argon2id.CreateHash("admin", argon2id.DefaultParams)
-
 		do.db.Create(&StaticInfo{InfoName: "password", InfoValue: password})
+		do.db.Create(&StaticInfo{InfoName: "jwt_secret", InfoValue: uuid.New().String()})
 		do.db.Create(&StaticInfo{InfoName: "cpu_temp_name"})
 		do.db.Create(&StaticInfo{InfoName: "mb_temp_name"})
 		do.db.Create(&StaticInfo{InfoName: "unselected_nets"})
@@ -169,6 +170,11 @@ func (do *DataOpt) add_nav(c *gin.Context) {
 }
 
 // Read  ----------------------------------------------------------------
+func (do *DataOpt) jwt_secret() string {
+	var info StaticInfo
+	do.db.First(&info, "info_name = ?", "jwt_secret")
+	return info.InfoValue
+}
 func (do *DataOpt) username(c *gin.Context) {
 	var info StaticInfo
 	do.db.First(&info, "info_name = ?", "username")
