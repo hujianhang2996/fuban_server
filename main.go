@@ -266,6 +266,7 @@ func main() {
 	api.POST("/add/nav", do.add_nav)
 	api.POST("/add/selected_sensor", do.add_selected_sensor)
 	api.POST("/add/unselected_net", do.add_unselected_net)
+	api.POST("/add/container", addContainer)
 
 	r.Run("0.0.0.0:8080")
 }

@@ -27,6 +27,11 @@ type ContainerInfo struct {
 	MemLoad float64
 }
 
+type ControlInput struct {
+	ID  string `json:"id"`
+	Opt string `json:"opt"`
+}
+
 var dockerCtx = context.Background()
 var dockerCli, _ = client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 
@@ -86,9 +91,14 @@ func getContainers() ([]ContainerInfo, error) {
 	return containerInfos, nil
 }
 
-func controlContainer(ctx *gin.Context) {
-	containerId := ctx.PostForm("id")
-	opt := ctx.PostForm("opt")
+func controlContainer(c *gin.Context) {
+	var controlInput ControlInput
+	if err := c.ShouldBindJSON(&controlInput); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"type": "error", "message": err.Error()})
+		return
+	}
+	containerId := controlInput.ID
+	opt := controlInput.Opt
 	var err error
 	switch opt {
 	case "restart":
@@ -104,9 +114,10 @@ func controlContainer(ctx *gin.Context) {
 	}
 	if err != nil {
 		log.Print(err)
-		ctx.JSON(500, gin.H{"type": "error", "message": err.Error()})
+		c.JSON(500, gin.H{"type": "error", "message": err.Error()})
 		return
 	}
+	catch_5s(&catch_5sData)
 	// for i, container := range catch_5sData.Containers {
 	// 	if container.ID == containerId {
 
@@ -122,7 +133,11 @@ func controlContainer(ctx *gin.Context) {
 	// 		log.Print(catch_5sData)
 	// 	}
 	// }
-	ctx.JSON(http.StatusOK, gin.H{"type": "success", "message": fmt.Sprintf("%s container %s succeed", opt, containerId)})
+	c.JSON(http.StatusOK, gin.H{"type": "success", "message": fmt.Sprintf("%s container %s succeed", opt, containerId)})
+}
+
+func addContainer(ctx *gin.Context) {
+
 }
 
 func test() {

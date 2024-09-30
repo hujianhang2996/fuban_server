@@ -195,7 +195,7 @@ func GetDiskInfosUnraid() ([]DiskInfo, error) {
 		diskInfo := DiskInfo{}
 		diskInfo.Name = mdInfo["diskId"]
 		diskInfo.MD = true
-		diskInfo.Path = blkInfos[mdInfo["diskName"]].MountPoint
+		diskInfo.Path = strings.Replace(blkInfos[mdInfo["diskName"]].MountPoint, "/hostmnt", "/mnt", 1)
 		diskInfo.TotalSize = blkInfos[mdInfo["diskName"]].FsSize
 		diskInfo.UsedSize = blkInfos[mdInfo["diskName"]].FsUsed
 		rdevReads, _ := strconv.Atoi(mdInfo["rdevReads"])

@@ -66,7 +66,7 @@ type SelectedSensor struct {
 	Channel    string `json:"channel"`
 	Type       string `json:"type"`
 	UserName   string `json:"user_name"`
-	RealSelect bool   `json:"real_select"`
+	RealSelect uint   `json:"real_select"`
 }
 type Nav struct {
 	ID   uint   `gorm:"primaryKey" json:"id"`
@@ -277,7 +277,7 @@ func (do *DataOpt) change_selected_sensor(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"type": "error", "message": err.Error()})
 		return
 	}
-	do.db.Model(&SelectedSensor{}).Where("name = ?", sensor.Name).Updates(sensor)
+	do.db.Model(&SelectedSensor{}).Where("name = ?", sensor.Name).Select("channel", "type", "user_name", "real_select").Updates(sensor)
 	c.JSON(http.StatusOK, gin.H{"type": "success", "message": "Modified successfully"})
 }
 
